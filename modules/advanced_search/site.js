@@ -1,8 +1,19 @@
 "use strict"
 
+var next_adv_term_index = function() {
+    var next = 1;
+    $('.adv_terms').each(function() {
+        var index = parseInt(this.id.substr(8), 10);
+        if (!isNaN(index) && index >= next) {
+            next = index + 1;
+        }
+    });
+    return next;
+};
+
 var add_remove_terms = function(el) {
     var close = $(globals.close_html);
-    var count = $('.adv_terms').length;
+    var count = next_adv_term_index();
     var term = $('#adv_term').clone(false);
     var not_chk = $('<span id="adv_term_not" class="adv_term_nots"><input type="checkbox" class="form-check-input" value="not" id="adv_term_not" /> !</span>');
     var and_or_html = '<div class="andor px-4"><input class="form-check-input" checked="checked" type="radio" name="term_and'
@@ -15,13 +26,11 @@ var add_remove_terms = function(el) {
     and_or.attr('id', 'term_and_or'+count);
     not_chk.attr('id', 'adv_term_not'+count);
     $(el).prev().after(and_or.prop('outerHTML')+not_chk.prop('outerHTML')+term.prop('outerHTML')+close.prop('outerHTML'));
-    $(el).hide();
     $('#term_adv_remove'+count).on("click", function() {
         $('#adv_term'+count).remove();
         $('#adv_term_not'+count).remove();
         $('#term_and_or'+count).remove();
         $(this).remove();
-        $(el).show();
     });
 };
 
@@ -406,18 +415,18 @@ var load_search_details = function() {
 };
 
 
+/* "and" joins a value to the current group, "or" starts a new one */
 var adv_group_vals = function(data, type) {
     var groups = [];
-    if (data.length == 2 && data[1]['condition'] == 'or') {
-        groups.push([data[0][type]]);
-        groups.push([data[1][type]]);
+    var current = [];
+    for (var i=0, len=data.length; i < len; i++) {
+        if (i > 0 && data[i]['condition'] == 'or') {
+            groups.push(current);
+            current = [];
+        }
+        current.push(data[i][type]);
     }
-    else if (data.length == 2) {
-        groups.push([data[0][type], data[1][type]]);
-    }
-    else {
-        groups.push([data[0][type]]);
-    }
+    groups.push(current);
     return groups;
 };
 
