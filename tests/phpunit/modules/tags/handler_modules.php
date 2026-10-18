@@ -181,80 +181,6 @@ class Hm_Test_Tags_Handler_Modules extends TestCase {
      * @preserveGlobalState disabled
      * @runInSeparateProcess
      */
-    public function test_add_tag_to_message_tags_all_selected_messages() {
-        $folder = bin2hex('INBOX');
-        $test = $this->prep_tag_handler_test('add_tag_to_message', array(
-            'tag_id' => 'tag1',
-            'list_path' => "0_101_$folder,0_102_$folder",
-            'tag' => true,
-        ));
-        Hm_Tags::add(array('id' => 'tag1', 'name' => 'Work'));
-
-        $res = $test->run_only();
-        $this->assertEquals(2, $res->handler_response['taged_messages']);
-        $this->assertEquals(array('Tag added'), Hm_Msgs::get());
-        $this->assertEquals(array('101', '102'), Hm_Tags::getFolders('tag1', '0')['INBOX']);
-    }
-
-    /**
-     * @preserveGlobalState disabled
-     * @runInSeparateProcess
-     */
-    public function test_add_tag_to_message_missing_tag_fails_for_all_messages() {
-        $folder = bin2hex('INBOX');
-        $test = $this->prep_tag_handler_test('add_tag_to_message', array(
-            'tag_id' => 'no_such_tag',
-            'list_path' => "0_101_$folder",
-            'tag' => true,
-        ));
-        $res = $test->run_only();
-        $this->assertEquals(0, $res->handler_response['taged_messages']);
-        $this->assertEquals(array('ERRFailed to tag selected messages'), Hm_Msgs::get());
-    }
-
-    /**
-     * @preserveGlobalState disabled
-     * @runInSeparateProcess
-     */
-    public function test_remove_tag_from_message_untags_message() {
-        $folder = bin2hex('INBOX');
-        $test = $this->prep_tag_handler_test('remove_tag_from_message', array(
-            'tag_id' => 'tag1',
-            'list_path' => "0_101_$folder",
-            'untag' => true,
-        ));
-        Hm_Tags::add(array('id' => 'tag1', 'name' => 'Work'));
-        Hm_Tags::addMessage('tag1', '0', 'INBOX', '101');
-
-        $res = $test->run_only();
-        $this->assertEquals(1, $res->handler_response['untaged_messages']);
-        $this->assertEquals(array('Tag removed'), Hm_Msgs::get());
-        $this->assertEquals(array(), array_values(Hm_Tags::getFolders('tag1', '0')['INBOX']));
-    }
-
-    /**
-     * @preserveGlobalState disabled
-     * @runInSeparateProcess
-     */
-    public function test_move_message_handler_moves_tagged_message() {
-        $test = $this->prep_tag_handler_test('move_message', array(), array(
-            'move_responses' => array(
-                array('oldUid' => '101', 'newUid' => '202', 'oldFolder' => 'INBOX', 'newFolder' => 'Archive', 'oldServer' => '0'),
-            ),
-        ));
-        Hm_Tags::add(array('id' => 'tag1', 'name' => 'Work'));
-        Hm_Tags::addMessage('tag1', '0', 'INBOX', '101');
-
-        $test->run_only();
-        $folders = Hm_Tags::getFolders('tag1', '0');
-        $this->assertEquals(array(), $folders['INBOX']);
-        $this->assertEquals(array('202'), $folders['Archive']);
-    }
-
-    /**
-     * @preserveGlobalState disabled
-     * @runInSeparateProcess
-     */
     public function test_imap_tag_content_noop_without_configured_sources() {
         $test = new Handler_Test('imap_tag_content', 'tags');
         $test->post = array('folder' => 'tag1');
@@ -292,5 +218,30 @@ class Hm_Test_Tags_Handler_Modules extends TestCase {
         $test->post = array('save_settings' => '1', 'tag_since' => '-2 weeks');
         $res = $test->run();
         $this->assertEquals('-2 weeks', $res->handler_response['new_user_settings']['tag_since_setting']);
+    }
+
+    /**
+     * @preserveGlobalState disabled
+     * @runInSeparateProcess
+     */
+    public function test_keyword_from_name_is_an_imap_atom() {
+        $this->assertEquals('Gestita', Hm_Tags::keywordFromName('Gestita'));
+        $this->assertEquals('Da_richiamare', Hm_Tags::keywordFromName('Da richiamare!'));
+        $this->assertEquals('Preventivi_2026', Hm_Tags::keywordFromName('  Preventivi (2026) '));
+        $this->assertEquals('Gestita_2', Hm_Tags::keywordFromName('Gestita', array(array('keyword' => 'Gestita'))));
+        $this->assertMatchesRegularExpression('/^label_[0-9a-f]{6}$/', Hm_Tags::keywordFromName('***'));
+    }
+
+    /**
+     * @preserveGlobalState disabled
+     * @runInSeparateProcess
+     */
+    public function test_tag_ids_from_flags_matches_keywords_only() {
+        $this->prep_tag_handler_test('tag_data');
+        Hm_Tags::add(array('id' => 'tag1', 'name' => 'Work', 'keyword' => 'Work'));
+        Hm_Tags::add(array('id' => 'tag2', 'name' => 'Home', 'keyword' => 'Home'));
+        $this->assertEquals(array('tag1'), Hm_Tags::tagIdsFromFlags('\\Seen \\Answered Work'));
+        $this->assertEquals(array(), Hm_Tags::tagIdsFromFlags('\\Seen Workshop'));
+        $this->assertEquals(array('tag1', 'tag2'), Hm_Tags::tagIdsFromFlags('Work Home \\Flagged'));
     }
 }

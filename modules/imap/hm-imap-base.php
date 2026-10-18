@@ -503,6 +503,11 @@ class Hm_IMAP_Base {
                     $valid = true;
                 }
                 break;
+            case 'keyword_atom':
+                if (preg_match("/^[A-Za-z0-9_\$.-]+$/", $val)) {
+                    $valid = true;
+                }
+                break;
         }
         return $valid;
     }

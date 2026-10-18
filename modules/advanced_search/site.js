@@ -244,6 +244,7 @@ var adv_collapse = function() {
     $('.targets_section').hide();
     $('.time_section').hide();
     $('.other_section').hide();
+    $('.tags_section').hide();
     $('.adv_expand_all').show();
     $('.adv_collapse_all').hide();
 }
@@ -365,7 +366,13 @@ var get_adv_other = function() {
         });
     }
     var limit = $('.adv_source_limit').val();
-    return {'limit': limit, 'flags': flags, 'charset': charset};
+    var tags = [];
+    $('.adv_tag_select').each(function() {
+        if ($(this).val()) {
+            tags.push($(this).val()+':'+$(this).data('tag-id'));
+        }
+    });
+    return {'limit': limit, 'flags': flags, 'charset': charset, 'tags': tags};
 };
 
 var process_advanced_search = function() {
@@ -463,6 +470,10 @@ var send_requests = function(requests) {
         for (var i=0, len=request['other']['flags'].length; i < len; i++) {
             params.push({'name': 'adv_flags[]', 'value': request['other']['flags'][i]});
         }
+        var tags = request['other']['tags'] || [];
+        for (var i=0, len=tags.length; i < len; i++) {
+            params.push({'name': 'adv_tags[]', 'value': tags[i]});
+        }
         Hm_Ajax.request(
             params,
             function(res) {
@@ -537,6 +548,7 @@ var search_summary = function(details) {
     $('.source_count').text($('.source_count').text().replace(/\d+/, details['sources'].length)).show();
     $('.time_count').text($('.time_count').text().replace(/\d+/, details['times'].length)).show();
     $('.other_count').text($('.other_count').text().replace(/\d+/, (charset + details['other']['flags'].length))).show();
+    $('.tag_count').text($('.tag_count').text().replace(/\d+/, (details['other']['tags'] || []).length)).show();
 };
 
 var apply_saved_search = function() {
@@ -605,6 +617,11 @@ var apply_saved_search = function() {
         $('input[type=checkbox][value='+details['other']['flags'][i]+']', $('.flags')).attr('checked', true);
     }
     $('.adv_source_limit').val(details['other']['limit']);
+    var saved_tags = details['other']['tags'] || [];
+    for (var i=0, len=saved_tags.length; i < len; i++) {
+        var tag_parts = saved_tags[i].split(':');
+        $('.adv_tag_select[data-tag-id="'+tag_parts[1]+'"]').val(tag_parts[0]);
+    }
 };
 
 var adv_reset_page = function() {

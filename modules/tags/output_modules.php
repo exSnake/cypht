@@ -214,3 +214,29 @@ class Hm_Output_display_configured_tags extends Hm_Output_Module {
         return $res;
     }
 }
+
+/**
+ * Label criteria for the advanced search form: any, has, does not have
+ * @subpackage tags/output
+ */
+class Hm_Output_advanced_search_tags extends Hm_Output_Module {
+    protected function output() {
+        $tags = $this->get('tags', array());
+        if (empty($tags)) {
+            return '';
+        }
+        $res = '<div data-target=".tags_section" class="settings_subtitle cursor-pointer px-3 py-2 mt-3">'.
+            '<i class="bi bi-tags-fill me-2"></i>'.$this->trans('Tags').
+            '<span class="tag_count">'.sprintf($this->trans('tags: %d'), 0).'</span></div>'.
+            '<div class="tags_section mx-5 py-1 mb-3"><div class="col-lg-6 col-12"><table class="table table-borderless">';
+        foreach ($tags as $tag) {
+            $res .= '<tr><th>'.$this->html_safe($tag['name']).'</th><td>'.
+                '<select class="adv_tag_select form-select w-auto" data-tag-id="'.$this->html_safe($tag['id']).'">'.
+                '<option value="">'.$this->trans('Any').'</option>'.
+                '<option value="has">'.$this->trans('Has label').'</option>'.
+                '<option value="not">'.$this->trans('Does not have label').'</option>'.
+                '</select></td></tr>';
+        }
+        return $res.'</table></div></div>';
+    }
+}

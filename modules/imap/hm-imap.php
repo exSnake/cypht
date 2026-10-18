@@ -1384,6 +1384,28 @@ if (!class_exists('Hm_IMAP')) {
          * @param bool $only_auto_bcc only include auto-bcc'ed messages
          * @return array list of IMAP message UIDs that match the search
          */
+        /**
+         * Format one search term for SEARCH or SORT. KEYWORD and UNKEYWORD take an
+         * unquoted flag atom, everything else a quoted string. A leading "NOT "
+         * on the value negates the term.
+         * @param array $vals field and value
+         * @return string|false
+         */
+        private function format_search_term($vals) {
+            $negate = mb_substr($vals[1], 0, 4) == 'NOT ';
+            $value = $negate ? mb_substr($vals[1], 4) : $vals[1];
+            if (in_array(mb_strtoupper($vals[0]), array('KEYWORD', 'UNKEYWORD'), true)) {
+                if (!$this->is_clean($value, 'keyword_atom')) {
+                    return false;
+                }
+                $term = mb_strtoupper($vals[0]).' '.$value;
+            }
+            else {
+                $term = $vals[0].' "'.str_replace('"', '\"', $value).'"';
+            }
+            return ($negate ? 'NOT ' : '').$term;
+        }
+
         public function search($target='ALL', $uids=false, $terms=array(), $esearch=array(), $exclude_deleted=true, $only_auto_bcc=false) {
             if (!$this->is_clean($this->search_charset, 'charset')) {
                 return array();
@@ -1428,12 +1450,11 @@ if (!class_exists('Hm_IMAP')) {
             if (!empty($terms)) {
                 $flds = array();
                 foreach ($terms as $vals) {
-                    if (mb_substr($vals[1], 0, 4) == 'NOT ') {
-                        $flds[] = 'NOT '.$vals[0].' "'.str_replace('"', '\"', mb_substr($vals[1], 4)).'"';
+                    $term = $this->format_search_term($vals);
+                    if ($term === false) {
+                        return array();
                     }
-                    else {
-                        $flds[] = $vals[0].' "'.str_replace('"', '\"', $vals[1]).'"';
-                    }
+                    $flds[] = $term;
                 }
                 $fld = ' '.implode(' ', $flds);
             }
@@ -1975,10 +1996,13 @@ if (!class_exists('Hm_IMAP')) {
                         $command = "UID STORE $uid_string -FLAGS (\Deleted)\r\n";
                         break;
                     case 'CUSTOM':
-                        /* TODO: check permanentflags of the selected mailbox to
-                         * make sure custom keywords are supported */
-                        if ($keyword && $this->is_clean($keyword, 'mailbox')) {
+                        if ($keyword && $this->is_clean($keyword, 'keyword_atom')) {
                             $command = "UID STORE $uid_string +FLAGS ($keyword)\r\n";
+                        }
+                        break;
+                    case 'UNCUSTOM':
+                        if ($keyword && $this->is_clean($keyword, 'keyword_atom')) {
+                            $command = "UID STORE $uid_string -FLAGS ($keyword)\r\n";
                         }
                         break;
                     case 'EXPUNGE':
@@ -2407,12 +2431,11 @@ if (!class_exists('Hm_IMAP')) {
             if (!empty($terms)) {
                 $flds = array();
                 foreach ($terms as $vals) {
-                    if (mb_substr($vals[1], 0, 4) == 'NOT ') {
-                        $flds[] = 'NOT '.$vals[0].' "'.str_replace('"', '\"', mb_substr($vals[1], 4)).'"';
+                    $term = $this->format_search_term($vals);
+                    if ($term === false) {
+                        return [];
                     }
-                    else {
-                        $flds[] = $vals[0].' "'.str_replace('"', '\"', $vals[1]).'"';
-                    }
+                    $flds[] = $term;
                 }
                 $fld = ' '.implode(' ', $flds);
             }

@@ -89,6 +89,9 @@ class Hm_Handler_process_adv_search_request extends Hm_Handler_Module {
                 $params[] = array($target, $term);
             }
         }
+        foreach ($this->tag_terms() as $term) {
+            $params[] = $term;
+        }
 
         $searchInAllFolders = $this->request->post['all_folders'] ?? false;
         $includeSubfolders = $this->request->post['include_subfolders'] ?? false;
@@ -104,6 +107,28 @@ class Hm_Handler_process_adv_search_request extends Hm_Handler_Module {
         $this->out('imap_search_results', $msg_list);
         $this->out('folder_status', $mailbox->get_folder_state());
         $this->out('imap_server_ids', array($this->imap_id));
+    }
+
+    /**
+     * Label criteria as KEYWORD search terms, when the tags module is active
+     * @return array
+     */
+    private function tag_terms() {
+        $terms = array();
+        if (!class_exists('Hm_Tags') || !array_key_exists('adv_tags', $this->request->post) || !is_array($this->request->post['adv_tags'])) {
+            return $terms;
+        }
+        foreach ($this->request->post['adv_tags'] as $tag_filter) {
+            $parts = explode(':', (string) $tag_filter, 2);
+            if (count($parts) != 2 || !in_array($parts[0], array('has', 'not'), true)) {
+                continue;
+            }
+            $keyword = Hm_Tags::keyword($parts[1]);
+            if ($keyword) {
+                $terms[] = array('KEYWORD', ($parts[0] == 'not' ? 'NOT ' : '').$keyword);
+            }
+        }
+        return $terms;
     }
 
     private function all_folders_search($mailbox, $flags, $params, $limit, $parent = '') {

@@ -15,80 +15,48 @@ class Hm_Handler_mod_env extends Hm_Handler_Module {
 }
 
 /**
- * Add tag/label to message
- * @subpackage imap/handler
+ * Store a label on messages as an IMAP keyword
+ * @subpackage tags/handler
  */
 class Hm_Handler_add_tag_to_message extends Hm_Handler_Module {
-    /**
-     * Use IMAP to tag the selected message uid
-     */
     public function process() {
         list($success, $form) = $this->process_form(array('tag_id', 'list_path', 'tag'));
         if (!$success || !isset($form['tag']) || $form['tag'] != true) {
             return;
         }
-
-        $taged_messages = 0;
         $ids = explode(',', $form['list_path']);
-        foreach ($ids as $msg_part) {
-            list($imap_server_id, $msg_id, $folder) = explode('_', $msg_part);
-            $folder = hex2bin($folder);
-            $tagged = Hm_Tags::addMessage($form['tag_id'], $imap_server_id, $folder, $msg_id);
-            if ($tagged) {
-                $taged_messages++;
-            }
-        }
+        $taged_messages = tag_messages_keyword($this, $form['tag_id'], $ids, 'CUSTOM');
         $this->out('taged_messages', $taged_messages);
-        $type = 'success';
         if ($taged_messages == count($ids)) {
-            $msg = 'Tag added';
+            Hm_Msgs::add('Tag added');
         } elseif ($taged_messages > 0) {
-            $msg = 'Some messages have been taged';
-            $type = 'warning';
+            Hm_Msgs::add('Some messages have been taged', 'warning');
         } else {
-            $msg = 'ERRFailed to tag selected messages';
-            $type = 'danger';
+            Hm_Msgs::add('ERRFailed to tag selected messages', 'danger');
         }
-        Hm_Msgs::add($msg, $type);
     }
 }
 
 /**
- * Remove tag/label from message
- * @subpackage imap/handler
+ * Remove a label keyword from messages
+ * @subpackage tags/handler
  */
 class Hm_Handler_remove_tag_from_message extends Hm_Handler_Module {
-    /**
-     * Use IMAP to remove tag from the selected message uid
-     */
     public function process() {
         list($success, $form) = $this->process_form(array('tag_id', 'list_path', 'untag'));
         if (!$success || !isset($form['untag']) || $form['untag'] != true) {
             return;
         }
-
-        $untaged_messages = 0;
         $ids = explode(',', $form['list_path']);
-        foreach ($ids as $msg_part) {
-            list($imap_server_id, $msg_id, $folder) = explode('_', $msg_part);
-            $folder = hex2bin($folder);
-            $untagged = Hm_Tags::removeMessage($msg_id, $form['tag_id'], $imap_server_id, $folder);
-            if ($untagged) {
-                $untaged_messages++;
-            }
-        }
+        $untaged_messages = tag_messages_keyword($this, $form['tag_id'], $ids, 'UNCUSTOM');
         $this->out('untaged_messages', $untaged_messages);
-        $type = 'success';
         if ($untaged_messages == count($ids)) {
-            $msg = 'Tag removed';
+            Hm_Msgs::add('Tag removed');
         } elseif ($untaged_messages > 0) {
-            $msg = 'Messages have been untaged';
-            $type = 'warning';
+            Hm_Msgs::add('Messages have been untaged', 'warning');
         } else {
-            $msg = 'ERRFailed to remove tag from selected messages';
-            $type = 'danger';
+            Hm_Msgs::add('ERRFailed to remove tag from selected messages', 'danger');
         }
-        Hm_Msgs::add($msg, $type);
     }
 }
 
@@ -110,6 +78,7 @@ class Hm_Handler_process_tag_update extends Hm_Handler_Module {
             Hm_Tags::edit($form['tag_id'], $tag);
             Hm_Msgs::add('Tag Edited');
         } else {
+            $tag['keyword'] = Hm_Tags::keywordFromName($tag['name'], Hm_Tags::getAll());
             Hm_Tags::add($tag);
             Hm_Msgs::add('Tag Created');
         }
@@ -143,44 +112,41 @@ class Hm_Handler_process_tag_delete extends Hm_Handler_Module {
 class Hm_Handler_imap_tag_content extends Hm_Handler_Module {
     public function process() {
         $data_sources = imap_data_sources();
-        $ids = array_map(function($ds) { return $ds['id']; }, $data_sources);
         $tag_id = $this->request->post['folder'];
-        if ($ids && $tag_id) {
-            try {
-                $msg_list = [];
-                foreach ($ids as $serverId) {
-                    $folders = Hm_Tags::getFolders($tag_id, $serverId);
-                    if (!empty($folders)) {
-                        $mailbox = Hm_IMAP_List::get_connected_mailbox($serverId, $this->cache);
-                        $server_details = Hm_IMAP_List::dump($serverId);
-                        if ($mailbox && $mailbox->authed()) {
-                            foreach ($folders as $folder => $messageIds) {
-                                $messages = array_map(function($msg) use ($serverId, $folder, $server_details) {
-                                    $msg['server_id'] = $serverId;
-                                    $msg['folder'] = bin2hex($folder);
-                                    $msg['server_name'] = $server_details['name'];
-                                    return $msg;
-                                }, $mailbox->get_message_list($folder, $messageIds));
-                                $msg_list = array_merge($msg_list, $messages);
-                            }
-                        }
-                    }
+        $keyword = $tag_id ? Hm_Tags::keyword($tag_id) : false;
+        if (!$data_sources || !$keyword) {
+            return;
+        }
+        try {
+            $limit = $this->user_config->get('tag_per_source_setting', DEFAULT_TAGS_PER_SOURCE);
+            $since = process_since_argument($this->user_config->get('tag_since_setting', DEFAULT_TAGS_SINCE));
+            $msg_list = [];
+            foreach ($data_sources as $source) {
+                $serverId = $source['id'];
+                $folder = $source['folder_name'];
+                $mailbox = Hm_IMAP_List::get_connected_mailbox($serverId, $this->cache);
+                if (!$mailbox || !$mailbox->authed()) {
+                    continue;
                 }
-                $limit = $this->user_config->get('tag_per_source_setting', DEFAULT_TAGS_PER_SOURCE);
-                $date = process_since_argument($this->user_config->get('tag_since_setting', DEFAULT_TAGS_SINCE));
-
-                $msg_list = array_filter($msg_list, function($msg) use ($date) {
-                    return strtotime($msg['internal_date']) >= strtotime($date);
-                });
-                $msg_list = array_slice($msg_list, 0, $limit);
-                usort($msg_list, function($a, $b) {
-                    return strtotime($b['internal_date']) - strtotime($a['internal_date']);
-                });
-
-                $this->out('imap_tag_data', $msg_list);
-            } catch (\Throwable $th) {
-                Hm_Msgs::add('Failed to load tag messages: '.$th->getMessage(), 'danger');
+                $uids = $mailbox->search($folder, 'ALL', array(array('SINCE', $since), array('KEYWORD', $keyword)));
+                if (!$uids) {
+                    continue;
+                }
+                $uids = array_slice($uids, -$limit);
+                $server_details = Hm_IMAP_List::dump($serverId);
+                foreach ($mailbox->get_message_list($folder, $uids) as $msg) {
+                    $msg['server_id'] = $serverId;
+                    $msg['folder'] = bin2hex($folder);
+                    $msg['server_name'] = $server_details['name'];
+                    $msg_list[] = $msg;
+                }
             }
+            usort($msg_list, function($a, $b) {
+                return strtotime($b['internal_date']) - strtotime($a['internal_date']);
+            });
+            $this->out('imap_tag_data', $msg_list);
+        } catch (\Throwable $th) {
+            Hm_Msgs::add('Failed to load tag messages: '.$th->getMessage(), 'danger');
         }
     }
 }
@@ -205,19 +171,35 @@ class Hm_Handler_tag_data extends Hm_Handler_Module {
     }
 }
 
-class Hm_Handler_move_message extends Hm_Handler_Module {
-    public function process()
-    {
-        $moveResponses = $this->get('move_responses', []);
-        foreach ($moveResponses as $response) {
-            Hm_Tags::moveMessageToADifferentFolder([
-                'oldId' => $response['oldUid'],
-                'newId' => $response['newUid'],
-                'oldFolder' => $response['oldFolder'],
-                'newFolder' => $response['newFolder'],
-                'oldServer' => $response['oldServer'],
-                'newServer' => $response['newServer'] ?? '',
-            ]);
+/**
+ * Apply or remove a label keyword on a list of server_uid_folderhex ids
+ * @param Hm_Handler_Module $mod handler with cache access
+ * @param string $tag_id label id
+ * @param array $ids message ids
+ * @param string $action CUSTOM adds the keyword, UNCUSTOM removes it
+ * @return int messages the server accepted
+ */
+if (!hm_exists('tag_messages_keyword')) {
+function tag_messages_keyword($mod, $tag_id, $ids, $action) {
+    $keyword = Hm_Tags::keyword($tag_id);
+    if (!$keyword) {
+        return 0;
+    }
+    $done = 0;
+    foreach ($ids as $msg_part) {
+        $parts = explode('_', $msg_part);
+        if (count($parts) != 3) {
+            continue;
+        }
+        list($imap_server_id, $msg_id, $folder) = $parts;
+        $mailbox = Hm_IMAP_List::get_connected_mailbox($imap_server_id, $mod->cache);
+        if (!$mailbox || !$mailbox->authed()) {
+            continue;
+        }
+        $res = $mailbox->message_action(hex2bin($folder), $action, array($msg_id), false, $keyword);
+        if (is_array($res) ? !empty($res['status']) : $res) {
+            $done++;
         }
     }
-}
+    return $done;
+}}

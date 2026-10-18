@@ -35,126 +35,62 @@ class Hm_Tags {
         return in_array($color, self::colorPalette(), true) ? $color : self::defaultColor();
     }
 
-    public static function addMessage($tagId, $serverId, $folder, $messageId) {
-        $folders = self::getFolders($tagId, $serverId);
-        if (!in_array($folder, $folders)) {
-            self::registerFolder($tagId, $serverId, $folder);
-            $folders = self::getFolders($tagId, $serverId);
+    /**
+     * Derive the IMAP keyword a new label is stored under. The keyword is fixed
+     * at creation so renaming a label does not orphan the messages carrying it.
+     * @param string $name label name
+     * @param array $existing labels already defined
+     * @return string
+     */
+    public static function keywordFromName($name, $existing = array()) {
+        $ascii = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $name);
+        if ($ascii === false) {
+            $ascii = $name;
         }
-        if (!isset($folders[$folder])) {
-            $folders[$folder] = [];
+        $keyword = trim(preg_replace('/_+/', '_', preg_replace('/[^A-Za-z0-9_]/', '_', $ascii)), '_');
+        if ($keyword === '') {
+            $keyword = 'label_'.mb_substr(md5($name), 0, 6);
         }
-        if (!in_array($messageId, $folders[$folder])) {
-            $folders[$folder][] = $messageId;
+        $taken = array();
+        foreach ($existing as $tag) {
+            if (!empty($tag['keyword'])) {
+                $taken[] = $tag['keyword'];
+            }
         }
-        $tag = self::get($tagId);
-        $tag['server'][$serverId][$folder] = $folders[$folder];
-        return self::edit($tagId, $tag);
+        $candidate = $keyword;
+        $n = 2;
+        while (in_array($candidate, $taken, true)) {
+            $candidate = $keyword.'_'.$n++;
+        }
+        return $candidate;
     }
 
-    public static function removeMessage($messageId, $tagId, $serverId = null, $folder = null) {
+    /**
+     * IMAP keyword of a label
+     * @param string $tagId label id
+     * @return string|false
+     */
+    public static function keyword($tagId) {
         $tag = self::get($tagId);
-        if (!$tag) {
+        if (!$tag || empty($tag['keyword'])) {
             return false;
         }
-        foreach ($tag['server'] as $currentServerId => $folders) {
-            if ($serverId !== null && $currentServerId != $serverId) {
-                continue;
-            }
-            foreach ($folders as $currentFolder => $messages) {
-                if ($folder !== null && $currentFolder !== $folder) {
-                    continue;
-                }
-                $newMessages = array_filter($messages, function($msgId) use ($messageId) {
-                    return $msgId != $messageId;
-                });
-                $tag['server'][$currentServerId][$currentFolder] = $newMessages;
-            }
-        }
-        return self::edit($tagId, $tag);
+        return $tag['keyword'];
     }
 
-    public static function registerFolder($tag_id, $serverId, $folder) {
-        $tag = self::get($tag_id);
-        if (! isset($tag['server'][$serverId][$folder])) {
-            $tag['server'][$serverId][$folder] = [];
-        }
-        self::edit($tag_id, $tag);
-    }
-
-    public static function getFolders($tag_id, $serverId) {
-        $tag = self::get($tag_id);
-        if (isset($tag['server'][$serverId])) {
-            return $tag['server'][$serverId];
-        }
-        return [];
-    }
-
-    public static function getTagIdsWithMessage($messageId, $serverId = null, $folder = null) {
-        $tags = self::getAll();
-        $tagIds = [];
-        foreach ($tags as $tagId => $tag) {
-            foreach ($tag['server'] as $currentServerId => $folders) {
-                if ($serverId !== null && $currentServerId != $serverId) {
-                    continue;
-                }
-                foreach ($folders as $currentFolder => $messages) {
-                    if ($folder !== null && $currentFolder !== $folder) {
-                        continue;
-                    }
-                    // Exclude folder indentifiers
-                    if (! is_array($messages)) {
-                        continue;
-                    }
-                    if (in_array($messageId, $messages)) {
-                        $tagIds[] = $tagId;
-                    }
-                }
+    /**
+     * Ids of the labels whose keyword appears in an IMAP flag list
+     * @param string $flags flags as returned by FETCH, space separated
+     * @return array
+     */
+    public static function tagIdsFromFlags($flags) {
+        $present = array_filter(preg_split('/[\s\\\\]+/', (string) $flags));
+        $ids = array();
+        foreach (self::getAll() as $tagId => $tag) {
+            if (!empty($tag['keyword']) && in_array($tag['keyword'], $present, true)) {
+                $ids[] = $tagId;
             }
         }
-        return $tagIds;
-    }
-
-    public static function moveMessageToADifferentFolder($params) {
-        $oldId = $params['oldId'];
-        $newId = $params['newId'];
-        $oldFolder = $params['oldFolder'];
-        $newFolder = $params['newFolder'];
-        $oldServer = $params['oldServer'];
-        $newServer = $params['newServer'] ?? '';
-
-        $tagIds = self::getTagIdsWithMessage($oldId, $oldServer, $oldFolder);
-        foreach ($tagIds as $tagId) {
-            $tag = self::get($tagId);
-            $folders = $tag['server'][$oldServer];
-            $messages = $folders[$oldFolder];
-            $newMessages = [];
-
-            foreach ($messages as $messageId) {
-                if ($messageId == $oldId) {
-                    continue;
-                }
-                $newMessages[] = $messageId;
-            }
-
-            $folders[$oldFolder] = $newMessages;
-
-            if ($newServer) {
-                if (!isset($tag['server'][$newServer])) {
-                    $tag['server'][$newServer] = [];
-                }
-                if (!isset($tag['server'][$newServer][$newFolder])) {
-                    $tag['server'][$newServer][$newFolder] = [];
-                }
-                $tag['server'][$newServer][$newFolder][] = $newId;
-            } else {
-                if (!isset($folders[$newFolder])) {
-                    $folders[$newFolder] = [];
-                }
-                $folders[$newFolder][] = $newId;
-                $tag['server'][$oldServer] = $folders;
-            }
-            self::edit($tagId, $tag);
-        }
+        return $ids;
     }
 }

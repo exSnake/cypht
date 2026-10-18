@@ -43,9 +43,10 @@ add_handler('ajax_imap_tag', 'tag_data', true, 'tags', 'load_user_data', 'after'
 add_handler('ajax_imap_tag', 'add_tag_to_message',  true, 'tags', 'save_imap_cache', 'after');
 add_handler('ajax_imap_tag', 'remove_tag_from_message',  true, 'tags', 'save_imap_cache', 'after');
 
-/* Sync the Tags Repository when moving messages */
-add_handler('ajax_imap_move_copy_action', 'tag_data', true, 'tags', 'load_user_data', 'after');
-add_handler('ajax_imap_move_copy_action', 'move_message', true, 'tags', 'imap_process_move', 'after');
+/* label criteria in the advanced search */
+add_handler('advanced_search', 'tag_data', true, 'tags', 'load_user_data', 'after');
+add_output('advanced_search', 'advanced_search_tags', true, 'tags', 'advanced_search_form_content', 'after');
+add_handler('ajax_adv_search', 'tag_data', true, 'tags', 'load_user_data', 'after');
 
 return array(
     'allowed_pages' => array(

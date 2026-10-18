@@ -1533,14 +1533,8 @@ function snooze_dropdown($output, $unsnooze = false) {
 
 if (!hm_exists('tags_dropdown')) {
 function tags_dropdown($context) {
-    $msgUid = $context->get('msg_text_uid');
-    $msgServerId = $context->get('msg_server_id', null);
-    $msgFolder = $context->get('msg_folder', null);
-    if ($msgServerId !== null && $msgFolder !== null) {
-        $msgTags = Hm_Tags::getTagIdsWithMessage($msgUid, $msgServerId, hex2bin($msgFolder));
-    } else {
-        $msgTags = Hm_Tags::getTagIdsWithMessage($msgUid);
-    }
+    $lc_headers = lc_headers($context->get('msg_headers', array()));
+    $msgTags = Hm_Tags::tagIdsFromFlags($lc_headers['flags'] ?? '');
 
     $folders = $context->get('tags', array());
     $txt = '<div class="dropdown d-inline-block">
